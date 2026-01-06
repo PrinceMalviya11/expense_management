@@ -43,12 +43,21 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (email, password) => {
-    const response = await api.post('/auth/login', { email, password });
-    const { token, ...userData } = response.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setUser(userData);
-    return response.data;
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const { token, ...userData } = response.data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      setUser(userData);
+      return response.data;
+    } catch (error) {
+      // Clear any existing auth data on login failure
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setUser(null);
+      // Re-throw the error so the Login component can handle it
+      throw error;
+    }
   };
 
   const register = async (name, email, password) => {
@@ -61,9 +70,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    // Clear all authentication data
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    // Clear any session storage as well
+    sessionStorage.clear();
   };
 
   const value = {

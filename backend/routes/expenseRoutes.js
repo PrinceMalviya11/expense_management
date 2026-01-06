@@ -6,6 +6,7 @@ import {
   updateExpense,
   deleteExpense,
   getExpenseStats,
+  getMonthlyExpenseStats,
 } from '../controllers/expenseController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -16,6 +17,7 @@ router.use(protect);
 
 router.route('/').get(getExpenses).post(createExpense);
 router.route('/stats/summary').get(getExpenseStats);
+router.route('/stats/monthly').get(getMonthlyExpenseStats);
 router.route('/:id').get(getExpense).put(updateExpense).delete(deleteExpense);
 
 export default router;

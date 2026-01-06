@@ -215,3 +215,49 @@ export const getIncomeStats = async (req, res) => {
   }
 };
 
+/**
+ * @route   GET /api/income/stats/monthly
+ * @desc    Get monthly income statistics for last 6 months
+ * @access  Private
+ */
+export const getMonthlyIncomeStats = async (req, res) => {
+  try {
+    const months = parseInt(req.query.months) || 6;
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+    
+    const query = {
+      user: req.user._id,
+      date: { $gte: startDate },
+    };
+
+    // Aggregate income by month
+    const monthlyIncome = await Income.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$date' },
+            month: { $month: '$date' },
+          },
+          total: { $sum: '$amount' },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]);
+
+    // Format month names
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formattedData = monthlyIncome.map(item => ({
+      month: monthNames[item._id.month - 1],
+      year: item._id.year,
+      total: item.total,
+      label: `${monthNames[item._id.month - 1]} ${item._id.year}`,
+    }));
+
+    res.json({ monthlyIncome: formattedData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNotification } from '../contexts/NotificationContext';
 import api from '../services/api';
 import { formatCurrency } from '../utils/format';
@@ -16,21 +16,20 @@ const Budget = () => {
   });
   const { showNotification } = useNotification();
 
-  useEffect(() => {
-    fetchBudget();
-    fetchCategories();
-  }, []);
-
-  const fetchCategories = async () => {
+  // Define fetchCategories first using useCallback
+  const fetchCategories = useCallback(async () => {
     try {
       const response = await api.get('/categories');
-      setCategories(response.data);
+      setCategories(response.data || []);
     } catch (error) {
-      showNotification('Failed to load categories', 'error');
+      console.error('Error fetching categories:', error);
+      setCategories([]);
+      // Don't show error notification for categories, just set empty array
     }
-  };
+  }, []);
 
-  const fetchBudget = async () => {
+  // Define fetchBudget using useCallback
+  const fetchBudget = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get('/budgets');
@@ -40,11 +39,87 @@ const Budget = () => {
         categoryBudgets: response.data.categoryBudgets || [],
       });
     } catch (error) {
-      showNotification('Failed to load budget', 'error');
+      console.error('Budget fetch error:', error);
+      // Set default budget if API fails
+      setBudget({
+        monthlyBudget: 0,
+        categoryBudgets: [],
+        totalSpent: 0,
+        remainingBudget: 0,
+        isExceeded: false,
+      });
+      setFormData({
+        monthlyBudget: 0,
+        categoryBudgets: [],
+      });
+      // Only show error if it's not a 404 (budget might not exist yet)
+      if (error.response?.status !== 404) {
+        showNotification(
+          error.response?.data?.message || 'Failed to load budget',
+          'error'
+        );
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [showNotification]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchBudget();
+    fetchCategories();
+  }, [fetchBudget, fetchCategories]);
+
+  // Refresh categories when entering edit mode
+  useEffect(() => {
+    if (editing) {
+      fetchCategories();
+    }
+  }, [editing, fetchCategories]);
+
+  // Listen for category updates from other pages (e.g., Categories page)
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'categories-updated') {
+        fetchCategories();
+        // Clear the flag
+        localStorage.removeItem('categories-updated');
+      }
+    };
+
+    const handleFocus = () => {
+      // Refresh categories when page comes into focus
+      fetchCategories();
+    };
+
+    const handleCategoryUpdate = () => {
+      fetchCategories();
+    };
+
+    // Listen for storage events (when categories are updated in another tab/page)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Listen for focus events (when user switches back to this tab)
+    window.addEventListener('focus', handleFocus);
+    
+    // Also listen for custom events (when categories are updated in same tab)
+    window.addEventListener('categories-updated', handleCategoryUpdate);
+
+    // Also listen for visibility change (when tab becomes visible)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchCategories();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('categories-updated', handleCategoryUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchCategories]);
 
   const handleSave = async () => {
     try {
@@ -99,6 +174,7 @@ const Budget = () => {
     return cb ? cb.spent || 0 : 0;
   };
 
+  // Show loading only on initial load
   if (loading && !budget) {
     return (
       <div className="budget-page">
@@ -107,8 +183,17 @@ const Budget = () => {
     );
   }
 
-  const totalSpent = budget?.totalSpent || 0;
-  const monthlyBudget = budget?.monthlyBudget || 0;
+  // Ensure budget is always defined (use default if null)
+  const currentBudget = budget || {
+    monthlyBudget: 0,
+    categoryBudgets: [],
+    totalSpent: 0,
+    remainingBudget: 0,
+    isExceeded: false,
+  };
+
+  const totalSpent = currentBudget.totalSpent || 0;
+  const monthlyBudget = currentBudget.monthlyBudget || 0;
   const remainingBudget = monthlyBudget - totalSpent;
   const isExceeded = totalSpent > monthlyBudget;
 
@@ -135,7 +220,7 @@ const Budget = () => {
         {editing ? (
           <div className="budget-edit-form">
             <div className="form-group">
-              <label className="form-label">Monthly Budget ($)</label>
+              <label className="form-label">Monthly Budget (₹)</label>
               <input
                 type="number"
                 className="input"
@@ -190,39 +275,45 @@ const Budget = () => {
         <h2>Category-wise Budget</h2>
         {editing ? (
           <div className="category-budgets-list">
-            {categories.map((category) => {
-              const limit = getCategoryBudget(category._id);
-              return (
-                <div key={category._id} className="category-budget-item">
-                  <div className="category-budget-header">
-                    <div
-                      className="category-icon-small"
-                      style={{
-                        backgroundColor: category.color + '20',
-                        color: category.color,
-                      }}
-                    >
-                      <span>{category.icon}</span>
+            {categories.length === 0 ? (
+              <div className="empty-state">
+                <p>No categories found. Create categories first!</p>
+              </div>
+            ) : (
+              categories.map((category) => {
+                const limit = getCategoryBudget(category._id);
+                return (
+                  <div key={category._id} className="category-budget-item">
+                    <div className="category-budget-header">
+                      <div
+                        className="category-icon-small"
+                        style={{
+                          backgroundColor: category.color + '20',
+                          color: category.color,
+                        }}
+                      >
+                        <span>{category.icon}</span>
+                      </div>
+                      <span className="category-name">{category.name}</span>
                     </div>
-                    <span className="category-name">{category.name}</span>
+                    <div className="category-budget-input">
+                      <span>₹</span>
+                      <input
+                        type="number"
+                        value={limit}
+                        onChange={(e) => handleCategoryBudgetChange(category._id, e.target.value)}
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
                   </div>
-                  <div className="category-budget-input">
-                    <span>$</span>
-                    <input
-                      type="number"
-                      value={limit}
-                      onChange={(e) => handleCategoryBudgetChange(category._id, e.target.value)}
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         ) : (
           <div className="category-budgets-list">
-            {budget?.categoryBudgets?.map((cb) => {
+            {currentBudget.categoryBudgets?.map((cb) => {
               const category = cb.category;
               const limit = cb.limit || 0;
               const spent = cb.spent || 0;
@@ -263,7 +354,7 @@ const Budget = () => {
                 </div>
               );
             })}
-            {(!budget?.categoryBudgets || budget.categoryBudgets.length === 0) && (
+            {(!currentBudget.categoryBudgets || currentBudget.categoryBudgets.length === 0) && (
               <div className="empty-state">
                 <p>No category budgets set. Edit budget to add category limits.</p>
               </div>
@@ -276,4 +367,3 @@ const Budget = () => {
 };
 
 export default Budget;
-

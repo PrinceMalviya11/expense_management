@@ -63,6 +63,19 @@ const Categories = () => {
   const handleSave = () => {
     fetchCategories();
     handleModalClose();
+    
+    // Notify other pages about category update
+    const timestamp = Date.now().toString();
+    localStorage.setItem('categories-updated', timestamp);
+    
+    // Dispatch custom event for same-tab updates
+    const event = new Event('categories-updated', { bubbles: true });
+    window.dispatchEvent(event);
+    
+    // Also trigger a second event after a short delay to ensure it's caught
+    setTimeout(() => {
+      window.dispatchEvent(new Event('categories-updated'));
+    }, 100);
   };
 
   if (loading) {

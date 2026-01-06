@@ -244,3 +244,49 @@ export const getExpenseStats = async (req, res) => {
   }
 };
 
+/**
+ * @route   GET /api/expenses/stats/monthly
+ * @desc    Get monthly expense statistics for last 6 months
+ * @access  Private
+ */
+export const getMonthlyExpenseStats = async (req, res) => {
+  try {
+    const months = parseInt(req.query.months) || 6;
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+    
+    const query = {
+      user: req.user._id,
+      date: { $gte: startDate },
+    };
+
+    // Aggregate expenses by month
+    const monthlyExpenses = await Expense.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$date' },
+            month: { $month: '$date' },
+          },
+          total: { $sum: '$amount' },
+        },
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]);
+
+    // Format month names
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formattedData = monthlyExpenses.map(item => ({
+      month: monthNames[item._id.month - 1],
+      year: item._id.year,
+      total: item.total,
+      label: `${monthNames[item._id.month - 1]} ${item._id.year}`,
+    }));
+
+    res.json({ monthlyExpenses: formattedData });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+

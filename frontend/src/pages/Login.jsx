@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -11,9 +11,35 @@ const Login = () => {
     password: '',
   });
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const { showNotification } = useNotification();
   const navigate = useNavigate();
+
+  // Clear form data when component mounts (after logout)
+  useEffect(() => {
+    // Reset form state
+    setFormData({
+      email: '',
+      password: '',
+    });
+    
+    // Clear browser autofill after a short delay to ensure DOM is ready
+    const timeoutId = setTimeout(() => {
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      if (emailInput) emailInput.value = '';
+      if (passwordInput) passwordInput.value = '';
+    }, 0);
+    
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
 
   const handleChange = (e) => {
     setFormData({
@@ -28,13 +54,21 @@ const Login = () => {
 
     try {
       await login(formData.email, formData.password);
+      // Clear form on successful login
+      setFormData({ email: '', password: '' });
       showNotification('Login successful!', 'success');
       navigate('/dashboard');
     } catch (error) {
-      showNotification(
-        error.response?.data?.message || 'Login failed. Please try again.',
-        'error'
-      );
+      // Clear form fields on error
+      setFormData({ email: '', password: '' });
+      // Clear input values directly to prevent autofill
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      if (emailInput) emailInput.value = '';
+      if (passwordInput) passwordInput.value = '';
+      
+      const errorMessage = error.response?.data?.message || 'Invalid email or password. Please try again.';
+      showNotification(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -50,7 +84,7 @@ const Login = () => {
           <p>Welcome back! Please sign in to your account.</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="auth-form">
+        <form onSubmit={handleSubmit} className="auth-form" autoComplete="off">
           <div className="form-group">
             <label className="form-label" htmlFor="email">
               Email
@@ -63,6 +97,9 @@ const Login = () => {
               placeholder="Enter your email"
               value={formData.email}
               onChange={handleChange}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
               required
             />
           </div>
@@ -79,6 +116,7 @@ const Login = () => {
               placeholder="Enter your password"
               value={formData.password}
               onChange={handleChange}
+              autoComplete="new-password"
               required
             />
           </div>
